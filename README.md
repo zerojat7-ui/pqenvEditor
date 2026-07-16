@@ -251,11 +251,23 @@ data, binding the whole header to the ciphertext.
 - Decrypted plaintext lives in normal (non-`mlock`'d) heap memory during
   editing; a core dump or swap could theoretically leak it. See the open
   items in the design doc.
+- All randomness (keys, seeds, nonces, file IDs) goes through
+  `pq_random_bytes()` (`pq_random.c`): `getentropy()` first, a
+  timeout-bounded `/dev/urandom` fallback (5s, so a container/embedded
+  system with an unseeded entropy pool fails loudly instead of hanging
+  forever), and — deliberately — **no fallback to a non-cryptographic
+  PRNG under any circumstance**. If both sources are unavailable, key
+  generation fails with a clear message instead of silently producing a
+  predictable key. If you're deploying somewhere without `/dev/urandom`
+  or `getentropy()` at all (unusual, but some minimal embedded targets),
+  you'll need to add a platform-specific source to `pq_random.c` yourself
+  rather than relying on a weaker default.
 
 ## Project layout
 
 ```
-pq_keccak.h/c              Keccak-f[1600], SHA3-256/512, SHAKE128/256
+pq_keccak.h/c               Keccak-f[1600], SHA3-256/512, SHAKE128/256
+pq_random.h/c                CSPRNG source (getentropy + timeout-bounded /dev/urandom fallback)
 pq_mlkem.h/c                ML-KEM-768 (FIPS 203)
 pq_chacha20poly1305.h/c     ChaCha20-Poly1305 AEAD (RFC 8439)
 pq_env_crypto.h/c           .kpqe file format, key management, rollback check
@@ -274,6 +286,7 @@ tests/api/                  algorithm-level tests — pure functions, no filesys
   test_cctv.c                  official C2SP/CCTV accumulated KAT (10,000 rounds)
   test_chacha.c                RFC 8439 §2.8.2 official AEAD vector
   test_env_crypto.c            .kpqe format round-trip, tamper/rollback (in-memory)
+  test_random.c                 CSPRNG source (chunking, distinctness, bad-args rejection)
 
 tests/local/                 integration tests — real files/keys/terminal,
                               always sandboxed in a throwaway mkdtemp() dir
